@@ -1,0 +1,50 @@
+#!/bin/bash
+# Author: Ghostwan
+# Version: 1.0.0
+
+docker info > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "Starting docker deamon..."
+    open --hide --background -a Docker
+    echo "Wait for docker to be ready and then retry! "
+    exit
+fi
+
+if [ "$1" = "update" ] || [ "$1" = "u" ]; then
+    echo "Pulling docker image..."
+    docker pull ritiek/spotify-downloader
+elif [ "$1" = "download" ] || [ "$1" = "d" ]; then
+    id=$2
+    filename="list.$(uuidgen).txt"
+    if [[ $id == *":album:"* ]]; then
+        echo "download album $id"
+        docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader --write-to "$filename" -b "$2"
+    elif [[ $id == *":playlist:"* ]]; then
+        echo "download playlist $id"
+        docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader --write-to "$filename" -p "$2"
+    elif [[ $id == *":artist:"* ]]; then
+        echo "download artist $id"
+        docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader --write-to "$filename" -ab "$2"
+    else
+        echo "Wrong ID!"
+        exit 1
+    fi
+
+    if [ $? -eq 0 ]; then
+        if [ "$3" = "full" ]; then
+            docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader -l $filename -ff "{artist} - {album} - {track_number} - {track_name}"
+        elif [ "$3" = "short" ]; then
+            docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader -l $filename -ff "{track_number} - {track_name}"
+        else
+            docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader -l $filename "${@:3}"
+        fi
+        rm $filename
+    else
+        echo "FAIL missing spotify id : playlist / artist / album"
+    fi    
+else
+    docker run --rm -it -v $(pwd):/music ritiek/spotify-downloader "$@"
+    if [ $? -ne 0 ]; then
+        echo "Error: you can also use update / download SPOTIFY_ID where SPOTIFY_ID is for example spotify:album:1OfR6MaF4KVFTAe3pMrtYv "
+    fi
+fi

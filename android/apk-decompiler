@@ -1,0 +1,17 @@
+#!/bin/bash
+# Author: Ghostwan
+# Version: 1.0.0
+
+if [ "$#" -ne 1 ]; then
+    echo "Illegal number of parameters"
+    echo "Usage: apkDecompiler <apk_file>"
+    exit 0
+fi
+
+workingFolder=$1.$( ls -l | grep -c ^d).decompile
+apktool d $1 -o $workingFolder
+unzip $1 -d $workingFolder/.tmp/
+cd $workingFolder 
+d2j-dex2jar .tmp/classes.dex
+rm -rf .tmp
+cfr-decompiler classes-dex2jar.jar --outputdir src

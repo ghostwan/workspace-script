@@ -1,0 +1,10 @@
+#!/bin/bash
+# Author: Ghostwan
+# Version: 1.0.0
+
+FILENAME=$(date +"%F-%k%M%S").png
+
+adb shell screencap -p /sdcard/$FILENAME
+adb pull /sdcard/$FILENAME
+adb shell rm /sdcard/$FILENAME
+open $FILENAME
