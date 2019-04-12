@@ -1,0 +1,39 @@
+#!/bin/bash
+
+OPTIND=1 # Reset in case getopts has been used previously in the shell.
+
+full=false
+
+while getopts "h?f" opt; do
+    case "$opt" in
+    h | \?)
+        echo "Usage: init-workspace [-h] [-f]
+Options:
+-h Help: Show this screen 
+-f Full: install all apps">&2
+        exit 0
+        ;;
+    f)
+        full=true
+        ;;
+    esac
+done
+
+if [ $full = true ]; then
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ghostwan/workspace-setup/master/install.sh)"    
+else
+    curl https://raw.githubusercontent.com/ghostwan/workspace-setup/master/install.sh | bash -s -- -f -c terminal
+fi
+
+echo "Cloning workspace..."
+git clone https://ghostwan@github.com/ghostwan/workspace
+cd workspace
+rm -f .cache.gws*
+branches=$(git branch -r)
+echo "What configuration do you want ? " 
+echo "${branches//origin\//}" | sed -n '1!p'
+read -p "> " branch
+git checkout $branch
+gws update
+.bootstrap/configs/install.sh
+
