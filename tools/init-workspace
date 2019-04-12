@@ -31,7 +31,7 @@ cd workspace
 rm -f .cache.gws*
 branches=$(git branch -r)
 echo "What configuration do you want ? " 
-echo "${branches//origin\//}" | sed -n '1!p'
+echo "${branches//origin\//}"
 read -p "> " branch
 git checkout $branch
 gws update
