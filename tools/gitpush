@@ -1,0 +1,18 @@
+#!/bin/bash
+# Author: ghostwan@gmail.com
+
+REMOTES=$@
+
+# If no remotes were passed in, push to all remotes.
+if [[ -z "$REMOTES" ]]; then
+    REM=$(git remote)
+
+    # Break the remotes into an array
+    REMOTES=$(echo $REM | tr " " "\n")
+fi
+
+# Iterate through the array, pushing to each remote
+for R in $REMOTES; do
+    echo "Pushing to $R..."
+    git push $R
+done
