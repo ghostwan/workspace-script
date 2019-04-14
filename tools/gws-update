@@ -1,0 +1,5 @@
+#!/bin/sh
+
+rm .cache.gws*
+gws update
+
