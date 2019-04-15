@@ -1,5 +1,23 @@
 #!/bin/sh
 
+fetch=false
+while getopts "h?f" opt; do
+    case "$opt" in
+    h | \?)
+        echo "Usage: gws-update [-h] [-f] \n Options:\n -h Show this screen \n -f fetch the workspace" >&2
+        exit 0
+        ;;
+    f)
+        fetch=true
+        ;;
+    esac
+done
+
+if [ $fetch = true ]; then
+    git fetch --all
+    git pull --rebase
+fi
+
 rm .cache.gws*
 gws update
 
