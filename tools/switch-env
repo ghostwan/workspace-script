@@ -1,0 +1,13 @@
+#!/bin/bash
+# Author: ghostwan@gmail.com
+if [ "$#" -ne 1 ]; then
+    echo "Illegal number of parameters!"
+    echo "Usage: switch-env <python_virtual_env>"
+    exit 1
+fi
+
+source $1/bin/activate
+if [ $? -ne 0 ]; then
+    python3 -m virtualenv $1
+    source $1/bin/activate
+fi
