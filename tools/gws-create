@@ -1,0 +1,32 @@
+#!/bin/sh
+
+if [ "$#" -ne 3 ]; then
+    echo "Illegal number of parameters!"
+    echo "Usage: gws-create <local-path> <subgroup> <repo-name>"
+    echo "Example: gws-create projects/android/app app my-super-app"
+    exit 1
+fi
+group=$(git branch | grep \* | cut -d ' ' -f2)
+localpath=$1
+subgroup=$2
+reponame=$3
+if [[ "$group" == "master" ]]; then
+    group="ghostwan"
+else
+    group="ghotswan.$group"
+fi
+
+echo "Create project '$3' in '$localpath' \n group: $group \n subgroup: $subgroup"
+
+# if [ $fetch = true ]; then
+#     git fetch --all
+#     git pull --rebase
+# fi
+
+# rm .cache.gws*
+# gws update
+
+# if [ $fetch = true ]; then
+#     gws ff
+# fi
+
