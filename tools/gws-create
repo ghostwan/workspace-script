@@ -6,6 +6,7 @@ if [ "$#" -ne 3 ]; then
     echo "Example: gws-create projects/android/app app my-super-app"
     exit 1
 fi
+cd $WORK
 group=$(git branch | grep \* | cut -d ' ' -f2)
 localpath=$1
 subgroup=$2
