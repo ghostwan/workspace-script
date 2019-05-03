@@ -1,17 +1,24 @@
 #!/bin/sh
 
 fetch=false
-while getopts "h?f" opt; do
+check=false
+while getopts "h?fc" opt; do
     case "$opt" in
     h | \?)
-        echo "Usage: gws-update [-h] [-f] \n Options:\n -h Show this screen \n -f fetch the workspace" >&2
+        echo "Usage: gws-update [-h] [-f] [-c] \n Options:\n -h Show this screen \n -f fetch the workspace \n -c check the workspace" >&2
         exit 0
         ;;
     f)
         fetch=true
         ;;
+    c)
+        check=true
+        ;;
     esac
 done
+shift $((OPTIND - 1))
+[ "${1:-}" = "--" ] && shift
+remaining_args="$@"
 
 if [ $fetch = true ]; then
     git fetch --all
@@ -19,9 +26,13 @@ if [ $fetch = true ]; then
 fi
 
 rm .cache.gws*
-gws update
+gws update $remaining_args
 
 if [ $fetch = true ]; then
-    gws ff
+    gws ff $remaining_args
+fi
+
+if [ $check = true ]; then
+    gws check $remaining_args
 fi
 

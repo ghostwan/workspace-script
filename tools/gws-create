@@ -1,7 +1,7 @@
 #!/bin/sh
 
 function print_error() {
-    printf "\033[0;31m $1 \033[0m\n"
+    printf "\033[0;31m$1\033[0m\n"
 }
 function print_ok() {
     printf "\033[0;32mOK\033[0m\n"
@@ -9,56 +9,96 @@ function print_ok() {
 i="\033[0;33m"
 e="\033[0m"
 
-if [ "$#" -le 1 ]; then
-    echo "Illegal number of parameters!"
-    echo "Usage: gws-create <local-path> <repo-name> [subgroup]"
-    echo "Example: gws-create projects/android/app my-super-app"
-    echo "Example: gws-create projects/android/app my-super-app sample"
+display_usage() {
+  echo
+  echo "Usage: ${0##*/} <local-path> <repo-name> [subgroup]"
+  echo
+  echo " -h     Display usage instructions"
+  echo " -s     Print available subgroups for the current group"
+  echo
+  echo "Example: ${0##*/} projects/android/sample my-super-app"
+  echo "Example: ${0##*/} projects/android/sample my-super-app sample"
+}
+
+display_subgroups() {
+    gid=$(curl -s --header "PRIVATE-TOKEN: $token" "https://gitlab.com/api/v4/groups" | jq '.[] | select(.full_path == "'$group'") | .id')
+    if [ -z $gid ]; then
+        print_error "Group $group doesn't exist! (group=user.branch)"
+        print_error "Create this group here (https://gitlab.com/groups/new) or change your workspace branch"
+        exit 1
+    fi
+    result=$(curl -s --header "PRIVATE-TOKEN: $token" "https://gitlab.com/api/v4/groups/$gid/subgroups" | jq '.[] | .path' | sed 's/"//g')
+    if [ -n "$result" ]; then
+        printf "Subgroups available for current group $group:\n"
+        echo "$result"
+    else
+        print_error "No Subgroups available for current group $group"
+    fi
+}
+
+cd $WORK
+if [ ! -f $WORK/.user.gitlab ]; then
+    print_error "Gitlab user not found!"
+    read -p "Gitlab user: " user
+    echo "$user" > $WORK/.user.gitlab
+else
+    user=$(<$WORK/.user.gitlab)
+fi
+
+if [ ! -f $WORK/.token.gitlab ]; then
+    print_error "Gitlab token not found!"
+    read -p "Gitlab API token (https://gitlab.com/profile/personal_access_tokens): " token
+    echo "$token" > $WORK/.token.gitlab
+else
+    token=$(<$WORK/.token.gitlab)
+fi
+
+workspace_branch=$(git branch | grep \* | cut -d ' ' -f2)
+if [[ "$workspace_branch" == "master" ]]; then
+    group="$user.private"
+else
+    group="$user.$workspace_branch"
+fi
+
+
+OPTIND=1
+while getopts "h?s" opt; do
+    case "$opt" in
+        s) display_subgroups >&2; exit 0;;
+        h | \?) display_usage >&2; exit 0;;
+    esac
+done
+shift $((OPTIND-1))
+
+[ "${1:-}" = "--" ] && shift
+if [ $# -le 1 ]; then
+    display_usage
     exit 1
 fi
-cd $WORK
-group=$(git branch | grep \* | cut -d ' ' -f2)
+
 localpath=$1
 reponame=$2
 subgroup=$3
 
 result=$(cat $WORK/.projects.gws | grep "$localpath/$reponame")
 if [ -n "$result" ]; then
-    print_error "Path $localpath/$reponame already exist, can't clone in an existing repo"
+    print_error "Repository $localpath/$reponame already exist in workspace!"
     exit 1
 fi
 
-if [[ "$group" == "master" ]]; then
-    group="ghostwan.private"
-else
-    group="ghostwan.$group"
-fi
-
-if [ ! -f $WORK/.credential.gitlab ]; then
-    print_error "Gitlab token not found!"
-    read -p "Gitlab API token (https://gitlab.com/profile/personal_access_tokens): " token
-    echo "$token" > $WORK/.credential.gitlab
-else
-    token=$(<$WORK/.credential.gitlab)
-fi
 printf "Create project $i'$reponame'$e in $i'$localpath'$e \n group: $i$group$e \n subgroup: $i$subgroup$e\n"
 group_path=$group
 if [ -n "$subgroup" ]; then
     group_path="$group/$subgroup"
 fi
-printf "looking namespace id for $e$group_path$i: "
+printf "looking namespace id for $i$group_path$e: "
 id=$(curl -s --header "PRIVATE-TOKEN: $token" "https://gitlab.com/api/v4/groups" | jq '.[] | select(.full_path == "'$group_path'") | .id')
 if [ -n "$id" ]; then
     printf "$i$id$e\n"
 else
-    gid=$(curl -s --header "PRIVATE-TOKEN: $token" "https://gitlab.com/api/v4/groups" | jq '.[] | select(.full_path == "'$group'") | .id')
-    if [ -z $gid ]; then
-        print_error "Group $group doesn't exist!" 
-        exit 1
-    fi
-    print_error "Subgroup $subgroup doesn't exist!" 
-    printf "Subgroup available for current group $group:\n"
-    curl -s --header "PRIVATE-TOKEN: $token" "https://gitlab.com/api/v4/groups/$gid/subgroups" | jq '.[] | .path' | sed 's/"//g'
+    print_error "id not found"
+    display_subgroups
+    print_error "Subgroup $subgroup doesn't exist!"
     exit 1
 fi
 
@@ -84,7 +124,7 @@ print_ok
 
 url=$( echo $result | jq '.http_url_to_repo' | sed 's/"//g')
 
-printf "Adding path $localpath for repo $url in .project.gws..."
+printf "Adding path $localpath/$reponame for repo $url in .project.gws..."
 
 if [ -n "$(tail -c 1 "$WORK/.projects.gws")" ]; then
     echo "" >> $WORK/.projects.gws
