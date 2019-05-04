@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+################################################################################
+# Author:       Erwan Pinault <ghostwan@gmail.com>                             #
+# OS:           (Probably?) All Linux distributions                            #
+# Requirements: git, bash > 4.0, gws                                           #
+# License:      MIT                                                            #
+# Version:      0.1.0                                                          #
+#                                                                              #
+# 'gws' is the abbreviation of 'Git WorkSpace'.                                #
+# This is a helper for the gws tool: https://github.com/StreakyCobra/gws.      #
+# It help to add an existing repository into the workspace                     #
+################################################################################
+
+PROJECTS_FILE=".projects.gws"
+
+display_usage() {
+  echo "Add existing repository into the workspace (.projects.gws)"
+  echo
+  echo "Usage: ${0##*/} [-h] <local-path> <repo-url>"
+  echo
+  echo " -h     Display usage instructions"
+  echo
+  echo "Example: ${0##*/} projects/android/ https://github.com/myuser/my-super-sample.git"
+}
+
+function print_error() {
+    printf "\033[0;31m$1\033[0m\n"
+}
+function print_ok() {
+    printf "\033[0;32mOK\033[0m\n"
+}
+i="\033[0;33m"
+e="\033[0m"
+
+is_project_root(){
+    # If there is a projects file, this is a project root
+    (ls "$PROJECTS_FILE" 1>/dev/null 2>&1) && return 0
+
+    # If we reach root, and there is no projects file, exit with an error
+    # message
+    [[ $(pwd) = "/" ]] && echo "Not in a workspace" && exit 1
+
+    # Otherwise return false.
+    return 1
+}
+
+OPTIND=1
+while getopts "h?s" opt; do
+    case "$opt" in
+        h | \?) display_usage >&2; exit 0;;
+    esac
+done
+shift $((OPTIND-1))
+
+[ "${1:-}" = "--" ] && shift
+if [ $# -le 1 ]; then
+    display_usage
+    exit 1
+fi
+
+while ! is_project_root
+    do
+        cd ..
+    done
+
+localpath=$1
+url=$2
+reponame=${url##*/}
+reponame=${reponame%.*}
+
+result=$(cat $PROJECTS_FILE | grep "$localpath/$reponame")
+if [ -n "$result" ]; then
+    print_error "Repository $localpath/$reponame already exist in workspace!"
+    exit 1
+fi
+
+printf "Adding path $i$localpath/$reponame$e for repo $i$url$e in .project.gws..."
+
+if [ -n "$(tail -c 1 "$PROJECTS_FILE")" ]; then
+    echo "" >> $PROJECTS_FILE
+fi
+
+echo "$localpath/$reponame | $url" >> $PROJECTS_FILE
+print_ok
+
+printf "Fetching repo $i$reponame$e...\n"
+gws-update

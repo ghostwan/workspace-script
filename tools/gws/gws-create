@@ -1,4 +1,18 @@
-#!/bin/sh
+#!/usr/bin/env bash
+
+################################################################################
+# Author:       Erwan Pinault <ghostwan@gmail.com>                             #
+# OS:           (Probably?) All Linux distributions                            #
+# Requirements: git, bash > 4.0, gws, jq                                       #
+# License:      MIT                                                            #
+# Version:      0.1.0                                                          #
+#                                                                              #
+# 'gws' is the abbreviation of 'Git WorkSpace'.                                #
+# This is a helper for the gws tool: https://github.com/StreakyCobra/gws.      #
+# It help the creation of a new repository on gitlab and its use with gws      #
+################################################################################
+
+PROJECTS_FILE=".projects.gws"
 
 function print_error() {
     printf "\033[0;31m$1\033[0m\n"
@@ -39,21 +53,37 @@ display_subgroups() {
     return $gid
 }
 
-cd $WORK
-if [ ! -f $WORK/.user.gitlab ]; then
+is_project_root(){
+    # If there is a projects file, this is a project root
+    (ls "$PROJECTS_FILE" 1>/dev/null 2>&1) && return 0
+
+    # If we reach root, and there is no projects file, exit with an error
+    # message
+    [[ $(pwd) = "/" ]] && echo "Not in a workspace" && exit 1
+
+    # Otherwise return false.
+    return 1
+}
+
+while ! is_project_root
+    do
+        cd ..
+    done
+
+if [ ! -f .user.gitlab ]; then
     print_error "Gitlab user not found!"
     read -p "Gitlab user: " user
-    echo "$user" > $WORK/.user.gitlab
+    echo "$user" > .user.gitlab
 else
-    user=$(<$WORK/.user.gitlab)
+    user=$(<.user.gitlab)
 fi
 
-if [ ! -f $WORK/.token.gitlab ]; then
+if [ ! -f .token.gitlab ]; then
     print_error "Gitlab token not found!"
     read -p "Gitlab API token (https://gitlab.com/profile/personal_access_tokens): " token
-    echo "$token" > $WORK/.token.gitlab
+    echo "$token" > .token.gitlab
 else
-    token=$(<$WORK/.token.gitlab)
+    token=$(<.token.gitlab)
 fi
 
 workspace_branch=$(git branch | grep \* | cut -d ' ' -f2)
@@ -83,7 +113,7 @@ localpath=$1
 reponame=$2
 subgroup=$3
 
-result=$(cat $WORK/.projects.gws | grep "$localpath/$reponame")
+result=$(cat $PROJECTS_FILE | grep "$localpath/$reponame")
 if [ -n "$result" ]; then
     print_error "Repository $localpath/$reponame already exist in workspace!"
     exit 1
@@ -134,11 +164,11 @@ url=$( echo $result | jq '.http_url_to_repo' | sed 's/"//g')
 
 printf "Adding path $i$localpath/$reponame$e for repo $i$url$e in .project.gws..."
 
-if [ -n "$(tail -c 1 "$WORK/.projects.gws")" ]; then
-    echo "" >> $WORK/.projects.gws
+if [ -n "$(tail -c 1 "$PROJECTS_FILE")" ]; then
+    echo "" >> $PROJECTS_FILE
 fi
 
-echo "$localpath/$reponame | $url" >> $WORK/.projects.gws
+echo "$localpath/$reponame | $url" >> $PROJECTS_FILE
 print_ok
 
 printf "Fetching repo $i$reponame$e...\n"

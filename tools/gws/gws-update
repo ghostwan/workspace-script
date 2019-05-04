@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+################################################################################
+# Author:       Erwan Pinault <ghostwan@gmail.com>                             #
+# OS:           (Probably?) All Linux distributions                            #
+# Requirements: git, bash > 4.0, gws                                           #
+# License:      MIT                                                            #
+# Version:      0.1.0                                                          #
+#                                                                              #
+# 'gws' is the abbreviation of 'Git WorkSpace'.                                #
+# This is a helper for the gws tool: https://github.com/StreakyCobra/gws.      #
+# It help the update of the worksapce                                          #
+################################################################################
+
+fetch=false
+check=false
+PROJECTS_FILE=".projects.gws"
+
+display_usage() {
+  echo "Update the workspace; add and refresh repositories from .projects.gws"
+  echo
+  echo "Usage: ${0##*/} [-h] [-f] [-c]"
+  echo
+  echo " -h     Display usage instructions"
+  echo " -f     Fetch the workspace configuration and repositories"
+  echo " -c     Check worksapce status"
+  echo
+}
+
+is_project_root(){
+    # If there is a projects file, this is a project root
+    (ls "$PROJECTS_FILE" 1>/dev/null 2>&1) && return 0
+
+    # If we reach root, and there is no projects file, exit with an error
+    # message
+    [[ $(pwd) = "/" ]] && echo "Not in a workspace" && exit 1
+
+    # Otherwise return false.
+    return 1
+}
+
+while ! is_project_root
+    do
+        cd ..
+    done
+
+while getopts "h?fc" opt; do
+    case "$opt" in
+    h | \?)
+        display_usage
+        exit 0
+        ;;
+    f)
+        fetch=true
+        ;;
+    c)
+        check=true
+        ;;
+    esac
+done
+shift $((OPTIND - 1))
+[ "${1:-}" = "--" ] && shift
+remaining_args="$@"
+
+if [ $fetch = true ]; then
+    git fetch --all
+    git pull --rebase
+fi
+
+rm .cache.gws*
+gws update $remaining_args
+
+if [ $fetch = true ]; then
+    gws ff $remaining_args
+fi
+
+if [ $check = true ]; then
+    gws check $remaining_args
+fi
+
