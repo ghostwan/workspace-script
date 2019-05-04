@@ -12,7 +12,7 @@ https://github.com/StreakyCobra/gws
 
 ## Incomming
 
-- Standalone fork of gws to incorpore in it those helpers: https://github.com/ghostwan/gws
+- Standalone fork of gws to incorporate in it the helpers: https://github.com/ghostwan/gws
 - support of Github to create a repository
 
 
