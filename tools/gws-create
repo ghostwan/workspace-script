@@ -10,6 +10,7 @@ i="\033[0;33m"
 e="\033[0m"
 
 display_usage() {
+  echo "Create a new repository on gitlab and add it in the workspace"
   echo
   echo "Usage: ${0##*/} <local-path> <repo-name> [subgroup]"
   echo
@@ -24,6 +25,7 @@ display_subgroups() {
     gid=$(curl -s --header "PRIVATE-TOKEN: $token" "https://gitlab.com/api/v4/groups" | jq '.[] | select(.full_path == "'$group'") | .id')
     if [ -z $gid ]; then
         print_error "Group $group doesn't exist! (group=user.branch)"
+        # TODO propose to create the group using gitlab api
         print_error "Create this group here (https://gitlab.com/groups/new) or change your workspace branch"
         exit 1
     fi
@@ -34,6 +36,7 @@ display_subgroups() {
     else
         print_error "No Subgroups available for current group $group"
     fi
+    return $gid
 }
 
 cd $WORK
@@ -98,7 +101,12 @@ if [ -n "$id" ]; then
 else
     print_error "id not found"
     display_subgroups
+    gid=$?
     print_error "Subgroup $subgroup doesn't exist!"
+    # TODO propose to create the subgroup using gitlab api
+    if [ -n "$gid" ]; then
+        print_error "You can create this subgroup here https://gitlab.com/groups/new?parent_id=4979560"
+    fi
     exit 1
 fi
 
@@ -124,7 +132,7 @@ print_ok
 
 url=$( echo $result | jq '.http_url_to_repo' | sed 's/"//g')
 
-printf "Adding path $localpath/$reponame for repo $url in .project.gws..."
+printf "Adding path $i$localpath/$reponame$e for repo $i$url$e in .project.gws..."
 
 if [ -n "$(tail -c 1 "$WORK/.projects.gws")" ]; then
     echo "" >> $WORK/.projects.gws
@@ -133,5 +141,5 @@ fi
 echo "$localpath/$reponame | $url" >> $WORK/.projects.gws
 print_ok
 
-printf "Fetching repo $reponame...\n"
+printf "Fetching repo $i$reponame$e...\n"
 gws-update
