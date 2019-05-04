@@ -2,10 +2,22 @@
 
 fetch=false
 check=false
+
+display_usage() {
+  echo "Update the workspace; add and refresh repositories from .projects.gws"
+  echo
+  echo "Usage: ${0##*/} [-h] [-f] [-c]"
+  echo
+  echo " -h     Display usage instructions"
+  echo " -f     Fetch the workspace configuration and repositories"
+  echo " -c     Check worksapce status"
+  echo
+}
+
 while getopts "h?fc" opt; do
     case "$opt" in
     h | \?)
-        echo "Usage: gws-update [-h] [-f] [-c] \n Options:\n -h Show this screen \n -f fetch the workspace \n -c check the workspace" >&2
+        display_usage
         exit 0
         ;;
     f)
