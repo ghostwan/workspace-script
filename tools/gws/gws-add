@@ -21,7 +21,7 @@ display_usage() {
   echo
   echo " -h     Display usage instructions"
   echo
-  echo "Example: ${0##*/} projects/android/ https://github.com/myuser/my-super-sample.git"
+  echo "Example: ${0##*/} projects/android https://github.com/myuser/my-super-sample.git"
 }
 
 function print_error() {
