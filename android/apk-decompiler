@@ -1,5 +1,5 @@
 #!/bin/bash
-# Author: Ghostwan
+# Author: Erwan
 # Version: 1.0.0
 
 if [ "$#" -ne 1 ]; then
