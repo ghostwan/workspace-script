@@ -1,0 +1,52 @@
+#!/bin/bash
+
+function println() {
+  printf "\033[0;33m $1 \033[0m\n"
+}
+
+function getLastBranches() {
+  number=5
+  if [ $# -eq 1 ]; then
+    number=$1
+  fi
+  git branch | sort -t. -k 1,1n -k 2,2n -k 3,3n -k 4,4n | tail -$number
+}
+
+function displayLastBranchesHelp() {
+  git fetch --all
+  last_tag=$(getLastBranches 1)
+  println "Example: ${0##*/} ${last_tag%.*}.$((${last_tag##*.} + 1)) $1"
+
+  println "Last branch created:"
+  println """
+$(getLastBranches 5)
+  """
+}
+
+function question_No_or_yes() {
+  printf "\033[0;41m $1 \033[0m"
+  printf "(\033[0;91m[N]o\033[0m"
+  read -p " or [y]es): "
+  case $(echo $REPLY | tr '[A-Z]' '[a-z]') in
+  y | yes) return 0 ;;
+  *)       return 1 ;;
+  esac
+}
+
+if [ $# -ne 1 ]; then
+  echo " Usage: ${0##*/} branch_name"
+  echo
+  echo " Decription: This script will remove the branch locally and in remote"
+  displayLastBranchesHelp
+  exit 0
+fi
+branch=$1
+if question_No_or_yes "remove the branch $1 locally?"
+then
+    git branch -D $branch
+fi
+if question_No_or_yes "remove the branch $1 remotely?"
+then
+    git push origin --delete $branch
+fi
+
