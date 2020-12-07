@@ -169,6 +169,8 @@ if [ -n "$(tail -c 1 "$PROJECTS_FILE")" ]; then
 fi
 
 echo "$localpath/$reponame | $url" >> $PROJECTS_FILE
+git commit -am "Add $reponame to $localpath"
+git push -u origin HEAD
 print_ok
 
 printf "Fetching repo $i$reponame$e...\n"
