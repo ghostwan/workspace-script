@@ -5,6 +5,6 @@
 FILENAME=$(date +"%F-%k%M%S").png
 
 adb shell screencap -p /sdcard/$FILENAME
-adb pull /sdcard/$FILENAME
+adb pull /sdcard/$FILENAME ~/Desktop
 adb shell rm /sdcard/$FILENAME
-open $FILENAME
+open ~/Desktop/$FILENAME
