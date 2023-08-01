@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Fix Pidcat for MacOS
+# Fix found here https://github.com/JakeWharton/pidcat/issues/180#issuecomment-1124019329
+
+brew install pidcat
+brew install pyenv
+pyenv install 2.7.18
+pyenv global 2.7.18
+
+pidcat_path=$(which pidcat)
+python_path="$HOME/.pyenv/versions/2.7.18/bin/python"
+replacement="#!$python_path -u"
+tmp_file=$(mktemp)
+
+sudo sed "1s|^.*$|$replacement|" "$pidcat_path" > "$tmp_file"
+sudo mv "$tmp_file" "$pidcat_path"
+sudo chmod +x "$pidcat_path"
+
