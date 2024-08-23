@@ -1,0 +1,1 @@
+gws-update -f | grep -B 1 Dirty
