@@ -1,17 +1,42 @@
 #!/bin/bash
 # Author: ghostwan@gmail.com
 
-if [ $# -ne 1 ]; then
-  echo " Usage: ${0##*/} repo_name"
+visibility="--public"
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --private|-p)
+      visibility="--private"
+      shift
+      ;;
+    -*)
+      echo "Unknown option: $1"
+      echo
+      echo " Usage: ${0##*/} [--private|-p] repo_name"
+      echo
+      echo " Description: Create a GitHub repository with an MIT license"
+      echo " Options:"
+      echo "   --private, -p  Create a private repository (default: public)"
+      exit 1
+      ;;
+    *)
+      repo_name=$1
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$repo_name" ]; then
+  echo " Usage: ${0##*/} [--private|-p] repo_name"
   echo
   echo " Description: Create a GitHub repository with an MIT license"
+  echo " Options:"
+  echo "   --private, -p  Create a private repository (default: public)"
   exit 1
 fi
 
-repo_name=$1
-
 echo "Creating repository '$repo_name' on GitHub..."
-gh repo create "$repo_name" --public --license mit --clone
+gh repo create "$repo_name" $visibility --license mit --clone
 
 if [ $? -eq 0 ]; then
   echo "Repository '$repo_name' created and cloned successfully!"
