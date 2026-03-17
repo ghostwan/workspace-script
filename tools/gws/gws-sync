@@ -1,0 +1,489 @@
+#!/usr/bin/env bash
+
+################################################################################
+# Author:       Erwan Pinault <ghostwan@gmail.com>                             #
+# OS:           (Probably?) All Linux distributions                            #
+# Requirements: git, bash > 4.0, gws                                           #
+# License:      MIT                                                            #
+# Version:      0.1.0                                                          #
+#                                                                              #
+# 'gws' is the abbreviation of 'Git WorkSpace'.                                #
+# This is a helper for the gws tool: https://github.com/StreakyCobra/gws.      #
+# It helps to synchronize selected repositories between machines by fetching,  #
+# pulling and pushing changes for repos registered in .sync.gws                #
+################################################################################
+
+PROJECTS_FILE=".projects.gws"
+SYNC_FILE=".sync.gws"
+
+# Colors
+r="\033[0;31m"   # red
+g="\033[0;32m"   # green
+i="\033[0;33m"   # yellow (info)
+b="\033[0;34m"   # blue
+c="\033[0;36m"   # cyan
+bo="\033[1m"     # bold
+e="\033[0m"      # reset
+
+function print_error() {
+    printf "${r}$1${e}\n"
+}
+function print_ok() {
+    printf "${g}OK${e}\n"
+}
+function print_success() {
+    printf "${g}$1${e}\n"
+}
+function print_info() {
+    printf "${c}$1${e}\n"
+}
+function print_header() {
+    printf "${bo}${b}$1${e}\n"
+}
+function print_separator() {
+    printf "${b}────────────────────────────────────────${e}\n"
+}
+
+display_usage() {
+    echo "Synchronize selected repositories between machines"
+    echo
+    echo "Usage: ${0##*/} [-h] <command> [args]"
+    echo
+    echo "Commands:"
+    echo "  add <path>       Add a repo to the sync list"
+    echo "  remove <path>    Remove a repo from the sync list"
+    echo "  list             List repos in the sync list"
+    echo "  fetch            Fetch all repos in the sync list"
+    echo "  pull             Pull (rebase) all repos in the sync list"
+    echo "  commit           Check for uncommitted changes and propose to commit"
+    echo "  push             Push all repos that have local commits"
+    echo "  sync             Fetch + pull + commit + push all repos (default)"
+    echo
+    echo "Options:"
+    echo "  -h               Display usage instructions"
+    echo
+    echo "Examples:"
+    echo "  ${0##*/} add projects/android/my-app"
+    echo "  ${0##*/} pull"
+    echo "  ${0##*/}                          # runs full sync (fetch+pull+push)"
+}
+
+is_project_root(){
+    # If there is a projects file, this is a project root
+    (ls "$PROJECTS_FILE" 1>/dev/null 2>&1) && return 0
+
+    # If we reach root, and there is no projects file, exit with an error
+    # message
+    [[ $(pwd) = "/" ]] && echo "Not in a workspace" && exit 1
+
+    # Otherwise return false.
+    return 1
+}
+
+# Navigate to workspace root
+while ! is_project_root; do
+    cd ..
+done
+
+WORKSPACE_ROOT=$(pwd)
+
+# Ensure sync file exists
+ensure_sync_file() {
+    if [ ! -f "$SYNC_FILE" ]; then
+        touch "$SYNC_FILE"
+    fi
+}
+
+# Check that sync file has entries
+check_sync_not_empty() {
+    ensure_sync_file
+    if [ ! -s "$SYNC_FILE" ]; then
+        print_error "No repos in sync list. Add some with: ${0##*/} add <path>"
+        exit 1
+    fi
+}
+
+# ─── ADD ──────────────────────────────────────────────────────────────────────
+
+cmd_add() {
+    local repopath="$1"
+    if [ -z "$repopath" ]; then
+        print_error "Usage: ${0##*/} add <path>"
+        exit 1
+    fi
+
+    # Remove trailing slash
+    repopath="${repopath%/}"
+
+    ensure_sync_file
+
+    # Check if already in sync list
+    if grep -qx "$repopath" "$SYNC_FILE" 2>/dev/null; then
+        print_error "Repository $repopath is already in the sync list"
+        exit 1
+    fi
+
+    # Check if the repo exists in .projects.gws or as a directory
+    local found_in_projects=false
+    if grep -q "^${repopath}\b" "$PROJECTS_FILE" 2>/dev/null; then
+        found_in_projects=true
+    fi
+
+    if [ "$found_in_projects" = false ] && [ ! -d "$WORKSPACE_ROOT/$repopath/.git" ]; then
+        print_error "Repository $repopath not found in workspace"
+        print_error "Make sure it exists in $PROJECTS_FILE or as a git repo at $WORKSPACE_ROOT/$repopath"
+        exit 1
+    fi
+
+    echo "$repopath" >> "$SYNC_FILE"
+    print_success "Added $repopath to sync list"
+}
+
+# ─── REMOVE ───────────────────────────────────────────────────────────────────
+
+cmd_remove() {
+    local repopath="$1"
+    if [ -z "$repopath" ]; then
+        print_error "Usage: ${0##*/} remove <path>"
+        exit 1
+    fi
+
+    repopath="${repopath%/}"
+    ensure_sync_file
+
+    if ! grep -qx "$repopath" "$SYNC_FILE" 2>/dev/null; then
+        print_error "Repository $repopath is not in the sync list"
+        exit 1
+    fi
+
+    # Remove the line (portable sed)
+    local tmpfile
+    tmpfile=$(mktemp)
+    grep -vx "$repopath" "$SYNC_FILE" > "$tmpfile"
+    mv "$tmpfile" "$SYNC_FILE"
+
+    print_success "Removed $repopath from sync list"
+}
+
+# ─── LIST ─────────────────────────────────────────────────────────────────────
+
+cmd_list() {
+    ensure_sync_file
+
+    if [ ! -s "$SYNC_FILE" ]; then
+        print_info "Sync list is empty. Add repos with: ${0##*/} add <path>"
+        return
+    fi
+
+    print_header "Repos in sync list:"
+    print_separator
+
+    while IFS= read -r repopath; do
+        [ -z "$repopath" ] && continue
+
+        local status_icon
+        if [ -d "$WORKSPACE_ROOT/$repopath/.git" ]; then
+            status_icon="${g}●${e}"
+        else
+            status_icon="${r}●${e}"
+        fi
+        printf "  ${status_icon} ${i}${repopath}${e}\n"
+    done < "$SYNC_FILE"
+
+    print_separator
+    printf "  ${g}●${e} repo exists   ${r}●${e} repo missing\n"
+}
+
+# ─── FETCH ────────────────────────────────────────────────────────────────────
+
+cmd_fetch() {
+    check_sync_not_empty
+
+    print_header "Fetching repos..."
+    print_separator
+
+    local count=0
+    local errors=0
+
+    while IFS= read -r repopath; do
+        [ -z "$repopath" ] && continue
+
+        local repodir="$WORKSPACE_ROOT/$repopath"
+        if [ ! -d "$repodir/.git" ]; then
+            printf "  ${r}✗${e} ${i}${repopath}${e} — repo not found, skipping\n"
+            ((errors++))
+            continue
+        fi
+
+        printf "  ${c}↓${e} ${i}${repopath}${e} — fetching..."
+        local output
+        output=$(cd "$repodir" && git fetch --all 2>&1)
+        if [ $? -eq 0 ]; then
+            printf "\r  ${g}✓${e} ${i}${repopath}${e} — fetched        \n"
+            ((count++))
+        else
+            printf "\r  ${r}✗${e} ${i}${repopath}${e} — fetch failed   \n"
+            printf "    ${r}%s${e}\n" "$output"
+            ((errors++))
+        fi
+    done < "$SYNC_FILE"
+
+    print_separator
+    printf "  Fetched: ${g}${count}${e}"
+    if [ $errors -gt 0 ]; then
+        printf "  Errors: ${r}${errors}${e}"
+    fi
+    printf "\n"
+}
+
+# ─── PULL ─────────────────────────────────────────────────────────────────────
+
+cmd_pull() {
+    check_sync_not_empty
+
+    print_header "Pulling repos..."
+    print_separator
+
+    local count=0
+    local errors=0
+    local skipped=0
+
+    while IFS= read -r repopath; do
+        [ -z "$repopath" ] && continue
+
+        local repodir="$WORKSPACE_ROOT/$repopath"
+        if [ ! -d "$repodir/.git" ]; then
+            printf "  ${r}✗${e} ${i}${repopath}${e} — repo not found, skipping\n"
+            ((errors++))
+            continue
+        fi
+
+        printf "  ${c}↓${e} ${i}${repopath}${e} — pulling..."
+        local output
+        output=$(cd "$repodir" && git pull --rebase 2>&1)
+        local exit_code=$?
+
+        if [ $exit_code -eq 0 ]; then
+            if echo "$output" | grep -q "Already up to date"; then
+                printf "\r  ${g}✓${e} ${i}${repopath}${e} — already up to date\n"
+                ((skipped++))
+            else
+                printf "\r  ${g}✓${e} ${i}${repopath}${e} — pulled          \n"
+                ((count++))
+            fi
+        else
+            printf "\r  ${r}✗${e} ${i}${repopath}${e} — pull failed     \n"
+            printf "    ${r}%s${e}\n" "$output"
+            ((errors++))
+        fi
+    done < "$SYNC_FILE"
+
+    print_separator
+    printf "  Pulled: ${g}${count}${e}  Up to date: ${c}${skipped}${e}"
+    if [ $errors -gt 0 ]; then
+        printf "  Errors: ${r}${errors}${e}"
+    fi
+    printf "\n"
+}
+
+# ─── COMMIT ───────────────────────────────────────────────────────────────────
+
+cmd_commit() {
+    check_sync_not_empty
+
+    print_header "Checking for uncommitted changes..."
+    print_separator
+
+    local committed=0
+    local skipped=0
+    local errors=0
+    local clean=0
+
+    while IFS= read -r repopath; do
+        [ -z "$repopath" ] && continue
+
+        local repodir="$WORKSPACE_ROOT/$repopath"
+        if [ ! -d "$repodir/.git" ]; then
+            printf "  ${r}✗${e} ${i}${repopath}${e} — repo not found, skipping\n"
+            ((errors++))
+            continue
+        fi
+
+        # Check if repo has uncommitted changes (staged, unstaged, or untracked)
+        local status
+        status=$(cd "$repodir" && git status --porcelain 2>/dev/null)
+
+        if [ -z "$status" ]; then
+            printf "  ${g}✓${e} ${i}${repopath}${e} — clean\n"
+            ((clean++))
+            continue
+        fi
+
+        # Repo is dirty, show details
+        printf "\n  ${r}●${e} ${i}${repopath}${e} — uncommitted changes:\n"
+        print_separator
+
+        # Show a compact summary of changes
+        local staged modified untracked deleted
+        staged=$(cd "$repodir" && git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+        modified=$(cd "$repodir" && git diff --name-only 2>/dev/null | wc -l | tr -d ' ')
+        untracked=$(cd "$repodir" && git ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+        deleted=$(cd "$repodir" && git ls-files --deleted 2>/dev/null | wc -l | tr -d ' ')
+
+        [ "$staged" -gt 0 ] && printf "    ${g}staged:${e}    %s file(s)\n" "$staged"
+        [ "$modified" -gt 0 ] && printf "    ${i}modified:${e}  %s file(s)\n" "$modified"
+        [ "$untracked" -gt 0 ] && printf "    ${c}untracked:${e} %s file(s)\n" "$untracked"
+        [ "$deleted" -gt 0 ] && printf "    ${r}deleted:${e}   %s file(s)\n" "$deleted"
+
+        echo ""
+        # Show short status
+        (cd "$repodir" && git status --short) | while IFS= read -r line; do
+            printf "    %s\n" "$line"
+        done
+
+        echo ""
+        printf "  Do you want to commit all changes for ${i}${repopath}${e}? ([Y]es/[n]o/[s]how diff) "
+        while true; do
+            read -p ": " answer
+            case $(echo "$answer" | tr '[A-Z]' '[a-z]') in
+                n|no)
+                    printf "  ${c}→${e} Skipped\n"
+                    ((skipped++))
+                    break
+                    ;;
+                s|show)
+                    echo ""
+                    (cd "$repodir" && git diff --stat && echo "" && git diff --cached --stat)
+                    echo ""
+                    printf "  Do you want to commit all changes for ${i}${repopath}${e}? ([Y]es/[n]o/[s]how diff) "
+                    ;;
+                *)
+                    # Ask for commit message
+                    local default_msg="sync: update $repopath"
+                    printf "  Commit message [${i}${default_msg}${e}]: "
+                    read -r commit_msg
+                    [ -z "$commit_msg" ] && commit_msg="$default_msg"
+
+                    local output
+                    output=$(cd "$repodir" && git add -A && git commit -m "$commit_msg" 2>&1)
+                    if [ $? -eq 0 ]; then
+                        printf "  ${g}✓${e} Committed: ${i}%s${e}\n" "$commit_msg"
+                        ((committed++))
+                    else
+                        printf "  ${r}✗${e} Commit failed\n"
+                        printf "    ${r}%s${e}\n" "$output"
+                        ((errors++))
+                    fi
+                    break
+                    ;;
+            esac
+        done
+    done < "$SYNC_FILE"
+
+    print_separator
+    printf "  Committed: ${g}${committed}${e}  Clean: ${c}${clean}${e}  Skipped: ${i}${skipped}${e}"
+    if [ $errors -gt 0 ]; then
+        printf "  Errors: ${r}${errors}${e}"
+    fi
+    printf "\n"
+}
+
+# ─── PUSH ─────────────────────────────────────────────────────────────────────
+
+cmd_push() {
+    check_sync_not_empty
+
+    print_header "Pushing repos..."
+    print_separator
+
+    local count=0
+    local errors=0
+    local skipped=0
+
+    while IFS= read -r repopath; do
+        [ -z "$repopath" ] && continue
+
+        local repodir="$WORKSPACE_ROOT/$repopath"
+        if [ ! -d "$repodir/.git" ]; then
+            printf "  ${r}✗${e} ${i}${repopath}${e} — repo not found, skipping\n"
+            ((errors++))
+            continue
+        fi
+
+        # Check if there are commits to push
+        local ahead
+        ahead=$(cd "$repodir" && git rev-list --count @{u}..HEAD 2>/dev/null)
+
+        if [ -z "$ahead" ] || [ "$ahead" -eq 0 ]; then
+            printf "  ${g}✓${e} ${i}${repopath}${e} — nothing to push\n"
+            ((skipped++))
+            continue
+        fi
+
+        printf "  ${c}↑${e} ${i}${repopath}${e} — pushing ${ahead} commit(s)..."
+        local output
+        output=$(cd "$repodir" && git push 2>&1)
+        if [ $? -eq 0 ]; then
+            printf "\r  ${g}✓${e} ${i}${repopath}${e} — pushed ${ahead} commit(s)  \n"
+            ((count++))
+        else
+            printf "\r  ${r}✗${e} ${i}${repopath}${e} — push failed        \n"
+            printf "    ${r}%s${e}\n" "$output"
+            ((errors++))
+        fi
+    done < "$SYNC_FILE"
+
+    print_separator
+    printf "  Pushed: ${g}${count}${e}  Nothing to push: ${c}${skipped}${e}"
+    if [ $errors -gt 0 ]; then
+        printf "  Errors: ${r}${errors}${e}"
+    fi
+    printf "\n"
+}
+
+# ─── SYNC (full) ─────────────────────────────────────────────────────────────
+
+cmd_sync() {
+    check_sync_not_empty
+
+    print_header "Full sync (fetch + pull + commit + push)"
+    echo ""
+    cmd_fetch
+    echo ""
+    cmd_pull
+    echo ""
+    cmd_commit
+    echo ""
+    cmd_push
+    echo ""
+    print_success "Sync complete!"
+}
+
+# ─── MAIN ─────────────────────────────────────────────────────────────────────
+
+# Handle -h flag before subcommand
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    display_usage
+    exit 0
+fi
+
+command="${1:-sync}"
+shift 2>/dev/null || true
+
+case "$command" in
+    add)    cmd_add "$@" ;;
+    remove) cmd_remove "$@" ;;
+    list)   cmd_list ;;
+    fetch)  cmd_fetch ;;
+    pull)   cmd_pull ;;
+    commit) cmd_commit ;;
+    push)   cmd_push ;;
+    sync)   cmd_sync ;;
+    -h|--help) display_usage ;;
+    *)
+        print_error "Unknown command: $command"
+        echo ""
+        display_usage
+        exit 1
+        ;;
+esac
