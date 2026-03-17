@@ -57,7 +57,7 @@ display_usage() {
     echo "  pull             Pull (rebase) all repos in the sync list"
     echo "  commit           Check for uncommitted changes and propose to commit"
     echo "  push             Push all repos that have local commits"
-    echo "  sync             Fetch + pull + commit + push all repos (default)"
+    echo "  sync             Fetch + commit + pull + push all repos (default)"
     echo
     echo "Options:"
     echo "  -h               Display usage instructions"
@@ -299,7 +299,9 @@ cmd_commit() {
     local errors=0
     local clean=0
 
-    while IFS= read -r repopath; do
+    # Read sync file on fd 3 so that interactive reads from /dev/tty are not
+    # consumed by the while-read loop
+    while IFS= read -r repopath <&3; do
         [ -z "$repopath" ] && continue
 
         local repodir="$WORKSPACE_ROOT/$repopath"
@@ -337,14 +339,15 @@ cmd_commit() {
 
         echo ""
         # Show short status
-        (cd "$repodir" && git status --short) | while IFS= read -r line; do
+        cd "$repodir" && git status --short | while IFS= read -r line; do
             printf "    %s\n" "$line"
         done
+        cd "$WORKSPACE_ROOT"
 
         echo ""
-        printf "  Do you want to commit all changes for ${i}${repopath}${e}? ([Y]es/[n]o/[s]how diff) "
+        printf "  Do you want to commit all changes for ${i}${repopath}${e}? ([Y]es/[n]o/[s]how diff): "
         while true; do
-            read -p ": " answer
+            read -r answer < /dev/tty
             case $(echo "$answer" | tr '[A-Z]' '[a-z]') in
                 n|no)
                     printf "  ${c}→${e} Skipped\n"
@@ -355,13 +358,13 @@ cmd_commit() {
                     echo ""
                     (cd "$repodir" && git diff --stat && echo "" && git diff --cached --stat)
                     echo ""
-                    printf "  Do you want to commit all changes for ${i}${repopath}${e}? ([Y]es/[n]o/[s]how diff) "
+                    printf "  Do you want to commit all changes for ${i}${repopath}${e}? ([Y]es/[n]o/[s]how diff): "
                     ;;
                 *)
                     # Ask for commit message
                     local default_msg="sync: update $repopath"
                     printf "  Commit message [${i}${default_msg}${e}]: "
-                    read -r commit_msg
+                    read -r commit_msg < /dev/tty
                     [ -z "$commit_msg" ] && commit_msg="$default_msg"
 
                     local output
@@ -378,7 +381,7 @@ cmd_commit() {
                     ;;
             esac
         done
-    done < "$SYNC_FILE"
+    done 3< "$SYNC_FILE"
 
     print_separator
     printf "  Committed: ${g}${committed}${e}  Clean: ${c}${clean}${e}  Skipped: ${i}${skipped}${e}"
@@ -446,13 +449,13 @@ cmd_push() {
 cmd_sync() {
     check_sync_not_empty
 
-    print_header "Full sync (fetch + pull + commit + push)"
+    print_header "Full sync (fetch + commit + pull + push)"
     echo ""
     cmd_fetch
     echo ""
-    cmd_pull
-    echo ""
     cmd_commit
+    echo ""
+    cmd_pull
     echo ""
     cmd_push
     echo ""
