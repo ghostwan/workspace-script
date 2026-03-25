@@ -3,6 +3,19 @@
 
 visibility="--public"
 
+usage() {
+  echo " Usage: ${0##*/} [--private|-p] repo_name"
+  echo
+  echo " Description: Create a GitHub repository with an MIT license"
+  echo " Options:"
+  echo "   --private, -p  Create a private repository (default: public)"
+  echo
+  echo " Available GitHub accounts:"
+  gh auth status 2>&1 | grep "Logged in to" | awk '{print $(NF-1)}' | while read -r account; do
+    echo "   - $account"
+  done
+}
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --private|-p)
@@ -12,11 +25,7 @@ while [[ $# -gt 0 ]]; do
     -*)
       echo "Unknown option: $1"
       echo
-      echo " Usage: ${0##*/} [--private|-p] repo_name"
-      echo
-      echo " Description: Create a GitHub repository with an MIT license"
-      echo " Options:"
-      echo "   --private, -p  Create a private repository (default: public)"
+      usage
       exit 1
       ;;
     *)
@@ -27,20 +36,61 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$repo_name" ]; then
-  echo " Usage: ${0##*/} [--private|-p] repo_name"
-  echo
-  echo " Description: Create a GitHub repository with an MIT license"
-  echo " Options:"
-  echo "   --private, -p  Create a private repository (default: public)"
+  usage
   exit 1
 fi
 
-echo "Creating repository '$repo_name' on GitHub..."
-gh repo create "$repo_name" $visibility --license mit --clone
+# Retrieve available GitHub accounts
+accounts=()
+while IFS= read -r account; do
+  accounts+=("$account")
+done < <(gh auth status 2>&1 | grep "Logged in to" | awk '{print $(NF-1)}')
+
+if [ ${#accounts[@]} -eq 0 ]; then
+  echo "No GitHub accounts found. Please run 'gh auth login' first."
+  exit 1
+elif [ ${#accounts[@]} -eq 1 ]; then
+  selected_account="${accounts[0]}"
+  echo "Using GitHub account: $selected_account"
+else
+  echo "Select a GitHub account:"
+  select selected_account in "${accounts[@]}"; do
+    if [ -n "$selected_account" ]; then
+      break
+    else
+      echo "Invalid selection, please try again."
+    fi
+  done
+fi
+
+# Switch to the selected account
+current_account=$(gh auth status 2>&1 | grep "Active account: true" -B3 | grep "Logged in to" | awk '{print $(NF-1)}')
+
+if [ "$current_account" != "$selected_account" ]; then
+  echo "Switching to account '$selected_account'..."
+  gh auth switch --user "$selected_account"
+  if [ $? -ne 0 ]; then
+    echo "Failed to switch to account '$selected_account'"
+    exit 1
+  fi
+fi
+
+full_repo_name="$selected_account/$repo_name"
+
+echo "Creating repository '$full_repo_name' on GitHub..."
+gh repo create "$full_repo_name" $visibility --license mit --clone
 
 if [ $? -eq 0 ]; then
-  echo "Repository '$repo_name' created and cloned successfully!"
+  echo "Repository '$full_repo_name' created and cloned successfully!"
+  # Switch back to original account if we changed it
+  if [ "$current_account" != "$selected_account" ] && [ -n "$current_account" ]; then
+    gh auth switch --user "$current_account" 2>/dev/null
+  fi
 else
-  echo "Failed to create repository '$repo_name'"
+  echo "Failed to create repository '$full_repo_name'"
+  # Switch back to original account if we changed it
+  if [ "$current_account" != "$selected_account" ] && [ -n "$current_account" ]; then
+    gh auth switch --user "$current_account" 2>/dev/null
+  fi
   exit 1
 fi
