@@ -1,0 +1,146 @@
+#!/bin/bash
+# Author: erwan
+#
+# Lance un serveur CodeNomad (cockpit web pour OpenCode) + un tunnel
+# Cloudflare public (HTTPS) pour s'y connecter depuis un téléphone en 4G,
+# simplement via le navigateur (Chrome/Safari), sans app dédiée.
+#
+# CodeNomad : https://github.com/NeuralNomadsAI/CodeNomad
+#
+# Usage: opencode-mobile [project_path] [workspace_root] [port]
+#
+#   project_path   Dossier du projet à ouvrir au démarrage (défaut: $PWD)
+#   workspace_root Racine autorisée pour le file browser CodeNomad
+#                  (défaut: $HOME/workspace si présent, sinon $HOME)
+#   port           Port HTTP local de CodeNomad (défaut: 9899)
+
+set -euo pipefail
+
+PROJECT_PATH="${1:-$PWD}"
+if [ -d "$HOME/workspace" ]; then
+  DEFAULT_WORKSPACE_ROOT="$HOME/workspace"
+else
+  DEFAULT_WORKSPACE_ROOT="$HOME"
+fi
+WORKSPACE_ROOT="${2:-$DEFAULT_WORKSPACE_ROOT}"
+PORT="${3:-9899}"
+HOSTNAME="127.0.0.1"
+
+if command -v codenomad >/dev/null 2>&1; then
+  CODENOMAD_CMD="codenomad"
+else
+  echo "codenomad introuvable dans le PATH, utilisation de npx (plus lent au démarrage)."
+  echo "Astuce: npm install -g @neuralnomads/codenomad"
+  CODENOMAD_CMD="npx --yes @neuralnomads/codenomad"
+fi
+
+command -v cloudflared >/dev/null 2>&1 || { echo "cloudflared introuvable (brew install cloudflared)"; exit 1; }
+
+# Tue tout process codenomad/cloudflared orphelin d'un précédent lancement
+# (ex: terminal fermé sans Ctrl+C) qui pourrait squatter le port et servir
+# un ancien mot de passe différent de celui affiché plus bas.
+STALE_PIDS=$(lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)
+if [ -n "$STALE_PIDS" ]; then
+  echo "Un process occupe déjà le port $PORT, arrêt en cours..."
+  echo "$STALE_PIDS" | xargs kill 2>/dev/null || true
+  sleep 1
+fi
+pkill -f "@neuralnomads/codenomad" 2>/dev/null || true
+
+# Génère un mot de passe si aucun n'est fourni via l'env
+export CODENOMAD_SERVER_PASSWORD="${CODENOMAD_SERVER_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-16)}"
+CODENOMAD_USERNAME="${CODENOMAD_SERVER_USERNAME:-codenomad}"
+
+TMP_DIR=$(mktemp -d /tmp/opencode-mobile.XXXXXX)
+CN_LOG="$TMP_DIR/codenomad.log"
+CF_LOG="$TMP_DIR/opencode-tunnel.log"
+
+cleanup() {
+  echo ""
+  echo "Arrêt du tunnel et de CodeNomad..."
+  [ -n "${CF_PID:-}" ] && kill "$CF_PID" 2>/dev/null
+  [ -n "${CN_PID:-}" ] && kill "$CN_PID" 2>/dev/null
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT INT TERM
+
+echo "Démarrage de CodeNomad sur $HOSTNAME:$PORT"
+echo "  Racine autorisée : $WORKSPACE_ROOT"
+echo "  Projet ouvert     : $PROJECT_PATH"
+$CODENOMAD_CMD \
+  --host "$HOSTNAME" \
+  --http true \
+  --https false \
+  --http-port "$PORT" \
+  --workspace-root "$WORKSPACE_ROOT" \
+  --username "$CODENOMAD_USERNAME" \
+  --password "$CODENOMAD_SERVER_PASSWORD" \
+  > "$CN_LOG" 2>&1 &
+CN_PID=$!
+
+# Attend que le serveur soit prêt
+for i in $(seq 1 60); do
+  if grep -q "HTTP server listening" "$CN_LOG" 2>/dev/null; then
+    break
+  fi
+  if ! kill -0 "$CN_PID" 2>/dev/null; then
+    echo "CodeNomad s'est arrêté prématurément, voir $CN_LOG"
+    cat "$CN_LOG"
+    exit 1
+  fi
+  sleep 0.5
+done
+
+echo "Ouverture du tunnel Cloudflare public..."
+cloudflared tunnel --url "http://$HOSTNAME:$PORT" > "$CF_LOG" 2>&1 &
+CF_PID=$!
+
+# Récupère l'URL publique générée par cloudflared (trycloudflare.com)
+TUNNEL_URL=""
+for i in $(seq 1 60); do
+  TUNNEL_URL=$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' "$CF_LOG" | head -1 || true)
+  [ -n "$TUNNEL_URL" ] && break
+  sleep 1
+done
+
+if [ -z "$TUNNEL_URL" ]; then
+  echo "Impossible de récupérer l'URL du tunnel, voir $CF_LOG"
+  cat "$CF_LOG"
+  exit 1
+fi
+
+echo ""
+echo "======================================================"
+echo " CodeNomad accessible en 4G/LTE à :"
+echo "   $TUNNEL_URL"
+echo ""
+echo " Nom d'utilisateur : $CODENOMAD_USERNAME"
+echo " Mot de passe      : $CODENOMAD_SERVER_PASSWORD"
+echo "======================================================"
+echo ""
+echo "Depuis le navigateur du téléphone (Chrome/Safari) :"
+echo " 1. Ouvre l'URL ci-dessus"
+echo " 2. Connecte-toi avec le nom d'utilisateur / mot de passe"
+echo " 3. Ouvre le projet : $PROJECT_PATH"
+echo "    (le file browser de CodeNomad suit correctement les liens"
+echo "     symboliques, contrairement au sélecteur de l'app opencode)"
+echo ""
+
+if command -v qrencode >/dev/null 2>&1; then
+  echo "QR code de l'URL (à scanner depuis le téléphone) :"
+  qrencode -t ANSIUTF8 "$TUNNEL_URL"
+fi
+
+echo "Ctrl+C pour arrêter CodeNomad et le tunnel."
+echo ""
+
+# Attend indéfiniment (jusqu'à Ctrl+C) en surveillant les process
+while kill -0 "$CN_PID" 2>/dev/null && kill -0 "$CF_PID" 2>/dev/null; do
+  sleep 1
+done
+
+echo "CodeNomad ou le tunnel s'est arrêté de manière inattendue."
+echo "--- logs codenomad ---"
+cat "$CN_LOG"
+echo "--- logs cloudflared ---"
+cat "$CF_LOG"
