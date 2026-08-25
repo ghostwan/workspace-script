@@ -75,6 +75,7 @@ $CODENOMAD_CMD \
   --workspace-root "$WORKSPACE_ROOT" \
   --username "$CODENOMAD_USERNAME" \
   --password "$CODENOMAD_SERVER_PASSWORD" \
+  --ui-no-update \
   > "$CN_LOG" 2>&1 &
 CN_PID=$!
 
